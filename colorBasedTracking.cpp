@@ -1,48 +1,80 @@
-#include "opencv2/imgcodecs.hpp"
+#include <iostream>
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
- #include "opencv2/core.hpp"
-#include "opencv2/face.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/imgproc.hpp"
-#include "opencv2/objdetect.hpp"
- #include "opencv2/objdetect.hpp"
-#include "opencv2/videoio.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/imgproc.hpp"
-#include <iostream>
-#include <stdio.h>
-#include <stdlib.h>
 
-using namespace std;
 using namespace cv;
+using namespace std;
 
-int main(int argc, char const *argv[])
-{
-	Mat src, hsv, red, sample, threshold_output;
-	VideoCapture captue(0);
-	while(captue.read(src))
-	{
-		Mat drawing = Mat::zeros(src.size(), src.type());
+ int main( int argc, char** argv )
+ {
+    VideoCapture cap(0); 
 
-		imshow("src", src);
-		cvtColor(src, hsv, CV_BGR2HSV);
-		blur( hsv, hsv, Size(3,3) );
-		imshow("hsv", hsv);
-		inRange(hsv, Scalar(-1, 100, 100), Scalar(6, 255, 255), red);
-		Canny( red, threshold_output, 50, 150, 3 );
-		imshow("threshold_output", threshold_output);
-		imshow("red", red);
-		vector<vector<Point> > contours;
-  		vector<Vec4i> hierarchy;
-		findContours( threshold_output, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_NONE, Point(0, 0) );
-		for( size_t i = 0; i< contours.size(); i++ )
-     	{
-      		Scalar color = Scalar(0, 0, 255);
-        	drawContours( drawing, contours, (int)i, color, 1, 8, vector<Vec4i>(), 0, Point() );
+    if ( !cap.isOpened() ) 
+    {
+         cout << "Cannot open the web cam" << endl;
+         return -1;
+    }
+
+    namedWindow("Control", CV_WINDOW_AUTOSIZE); 
+
+  int iLowH = 0;
+ int iHighH = 10;
+
+  int iLowS = 100; 
+ int iHighS = 255;
+
+  int iLowV = 100;
+ int iHighV = 255;
+
+ cvCreateTrackbar("LowH", "Control", &iLowH, 179); 
+ cvCreateTrackbar("HighH", "Control", &iHighH, 179);
+
+  cvCreateTrackbar("LowS", "Control", &iLowS, 255); 
+ cvCreateTrackbar("HighS", "Control", &iHighS, 255);
+
+  cvCreateTrackbar("LowV", "Control", &iLowV, 255); 
+ cvCreateTrackbar("HighV", "Control", &iHighV, 255);
+
+    while (cap.read(imgOriginal))
+    { 
+
+        Mat imgHSV;
+
+        cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); 
+       
+        Mat imgThresholded, drawing = Mat::zeros(imgOriginal.size(), imgOriginal.type()), threshold_output;
+
+        inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded); 
+            
+        erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
+        dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
+
+        dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
+        erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
+
+        Canny( imgThresholded, threshold_output, 50, 150, 3 );
+        imshow("threshold_output", threshold_output);
+        vector<vector<Point> > contours;
+        vector<Vec4i> hierarchy;
+
+        findContours( threshold_output, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_NONE, Point(0, 0) );
+        for( size_t i = 0; i< contours.size(); i++ )
+        {
+            Scalar color = Scalar(0, 0, 255);
+            drawContours( drawing, contours, (int)i, color, 1, 8, vector<Vec4i>(), 0, Point() );
         }
         imshow("drawing", drawing);
-		waitKey(10);
-	}
-	return 0;
+
+        imshow("Thresholded Image", imgThresholded); 
+        imshow("Original", imgOriginal); 
+
+              if (waitKey(30) == 27) 
+             {
+                  cout << "esc key is pressed by user" << endl;
+                  break; 
+             }
+    }
+
+   return 0;
+
 }
