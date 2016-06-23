@@ -45,7 +45,7 @@ using namespace std;
 using namespace cv;
 
 std::vector<Mat> newsImages;
-Mat weatherIcon, finalCal;
+Mat weatherIcon, finalCal, tempImage;
 
 class Stream
 {
@@ -510,6 +510,21 @@ bool getWeather()
   weatherIconPath += (icon+".png");
   cout<<weatherIconPath<<endl;
   weatherIcon = imread(weatherIconPath, 1);
+  string temper = patch::to_string(tempInt);
+  string front = "convert -pointsize 120 -fill black -draw 'text 65, 245 ", rear = " ' temp_background.jpg temp_backgroundi.jpg", command;
+
+    command = front+"\""+temper+"\""+rear;
+    std::cout<<"command = "<<command;
+
+    system(command.c_str());
+    front = "convert -pointsize 40 -fill black -draw 'text 80, 95 ", rear = " ' temp_backgroundi.jpg temperature.jpg", command;
+
+    command = front+"\""+"Mumbai"+"\""+rear;
+    std::cout<<"command = "<<command;
+
+    system(command.c_str());
+
+    tempImage = imread("temperature.jpg", 1);
 
   return EXIT_SUCCESS;
 }
@@ -697,6 +712,35 @@ int main(int argc, char const *argv[])
 				    src2.copyTo(src2final,gray);
 				    finalImage = src1final+src2final;
 				}
+        if(markerIds[i] == 20)
+        {
+          vector<Point2f> left_image;      
+          vector<Point2f> right_image;
+
+          left_image.push_back(Point2f(float(0),float(0)));
+          left_image.push_back(Point2f(float(tempImage.cols),float(0)));
+          left_image.push_back(Point2f(float(tempImage.cols),float(tempImage.rows)));
+            left_image.push_back(Point2f(float(0),float(tempImage.rows)));        
+
+            for(int j = 0; j < markerCorners[i].size(); ++j)
+            { 
+              right_image.push_back(markerCorners[i][j]);
+            }
+          Mat H = findHomography(  left_image,right_image,0 );
+              Mat logoWarped;
+              warpPerspective(tempImage,logoWarped,H,finalImage.size() );
+
+
+              Mat gray,gray_inv,src1final,src2final;
+              Mat src1 = finalImage, src2 = logoWarped.clone();
+            cvtColor(src2,gray,CV_BGR2GRAY);
+            threshold(gray,gray,0,255,CV_THRESH_BINARY);
+            //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
+            bitwise_not ( gray, gray_inv );
+            src1.copyTo(src1final,gray_inv);
+            src2.copyTo(src2final,gray);
+            finalImage = src1final+src2final;
+        }
 				if(markerIds[i] == 220)
 				{
 					vector<Point2f> left_image;      
@@ -726,7 +770,7 @@ int main(int argc, char const *argv[])
 				    src2.copyTo(src2final,gray);
 				    finalImage = src1final+src2final;
 				}
-				if(markerIds[i] % 20 == 0 and (markerIds[i]/20) <= newsImages.size() and (markerIds[i]/20) <= 10 and (markerIds[i]/20) >= 1 and (markerIds[i]/20) != 4)
+				if(markerIds[i] % 20 == 0 and (markerIds[i]/20) <= newsImages.size() and (markerIds[i]/20) <= 10 and (markerIds[i]/20) >= 2 and (markerIds[i]/20) != 4)
 				{
 					vector<Point2f> left_image;      
 					vector<Point2f> right_image;
