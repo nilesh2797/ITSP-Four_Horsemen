@@ -41,11 +41,96 @@
 #define INVALID_SOCKET -1
 #define SOCKET_ERROR   -1
 
+#define FULL 0
+#define CENTERED 1
+#define MAINPAGE 2
+#define NEWSPAGE 3
+
 using namespace std;
 using namespace cv;
 
-std::vector<Mat> newsImages;
-Mat weatherIcon, finalCal, tempImage;
+Mat weatherIcon, finalCal, tempImage, backIcon, nextIcon, prevIcon, noImageIcon;
+int idx = 0;
+
+Mat clk(640,640,CV_8UC3, Scalar(1, 1, 1)); 
+Mat back_up(640,640,CV_8UC3);
+
+Point cent(320,320);
+Point perim(320,0);
+int rad =320;
+float sec_angle=270;
+float min_angle=330;
+float hour_angle=210;
+
+time_t rawtime;
+struct tm * timeinfo;
+float second;
+float minute;
+float hour;
+float millisec;
+struct timeb tmb;
+
+struct Page
+{
+  int type;
+  int code;
+  vector<Mat> images;
+
+  Page()
+  {
+    type = CENTERED;
+    code = NEWSPAGE;
+  }
+  Page(int t, int c)
+  {
+    type = t;
+    code = c;
+  }
+}mainPage(FULL, MAINPAGE), topNewsPage, moneyNewsPage, sportsNewsPage, lifestylePage, worldNewsPage, healthPage, techNewsPage, mediaNewsPage;
+
+Page currentPage;
+
+void initializeMainPage()
+{
+  Mat test;
+  test = imread("mainPageHeaders/topHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/moneyHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/sportsHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/lifeStyleHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/worldHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/healthHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/techHeader.jpg", 1);
+  mainPage.images.push_back(test);
+  test = imread("mainPageHeaders/mediaHeader.jpg", 1);
+  mainPage.images.push_back(test);
+}
+
+struct box
+{
+  Point2f pt[4];
+
+  box()
+  {
+    for(int i = 0; i < 4; ++i)
+      pt[i] = Point(0, 0);
+  }
+
+  bool valid()
+  {
+    for(int i = 0; i < 4; ++i)
+    {
+      if(pt[i].x <= 0 or pt[i].y <= 0)
+        return false;
+    }
+    return true;
+  }
+};
 
 class Stream
 {
@@ -247,24 +332,6 @@ namespace patch
     }
 }
 
-Mat clk(640,640,CV_8UC3, Scalar(1, 1, 1)); 
-Mat back_up(640,640,CV_8UC3);
-
-Point cent(320,320);
-Point perim(320,0);
-int rad =320;
-float sec_angle=270;
-float min_angle=330;
-float hour_angle=210;
-
-time_t rawtime;
-struct tm * timeinfo;
-float second;
-float minute;
-float hour;
-float millisec;
-struct timeb tmb;
-
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -285,52 +352,52 @@ std::ostream & operator<<(std::ostream & o, indent const & in)
   return o;
 }
 
-bool createNewsImages()
+bool createNewsImages(string type, vector<Mat> &newsImages)//e.g type = topNews not top
 {
 	CURL *curl;
   CURLcode res;
   std::string readBuffer;
-
+  string url = "http://feeds.reuters.com/reuters/IN";
+  url += type;
+  string xmlFileName = "xmls/";
+  xmlFileName += type;
+  xmlFileName += ".xml";
     
   curl = curl_easy_init();
   if(curl) {
-    curl_easy_setopt(curl, CURLOPT_URL, "http://feeds.reuters.com/reuters/INtopNews");
-        // example.com is redirected, so we tell libcurl to follow redirection
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
         
-        // Perform the request, res will get the return code
     res = curl_easy_perform(curl);
-        //Check for errors
     if(res != CURLE_OK)
       fprintf(stderr, "curl_easy_perform() failed: %s\n",
                 curl_easy_strerror(res));
-        
-        // always cleanup
+    else
+    {   
+      ofstream myfile (xmlFileName.c_str());
+      myfile<<readBuffer;
+    }
     curl_easy_cleanup(curl);
-         //std::cout << readBuffer << std::endl;
-    ofstream myfile ("example.xml");
-    myfile<<readBuffer;
   }
   int count = 1, number = 2;
   string toput[3]; 
-  toput[0] = "topNews";
   Mat test;
   std::locale::global(std::locale(""));
   try
   {
-    xmlpp::TextReader reader("example.xml");
+    xmlpp::TextReader reader(xmlFileName.c_str());
 
     while(reader.read())
     {
       int depth = reader.get_depth();
       if(reader.has_value())
       {
-        if(reader.get_value() == "topNews")
+        if(reader.get_value() == type)
         {
           count = 1;
-          toput[count-1] = "topNews";
+          toput[count-1] = type;
         }
         else
         {
@@ -380,38 +447,29 @@ bool createNewsImages()
                       cnt = 0;
                     }
                   }
-                  string front = "convert -pointsize 20 -fill gray -draw 'text 30, 100 \"", rear = "\" ' newspaper.jpg ", newImage = "news", command;
+                  string front = "convert -pointsize 20 -fill gray -draw 'text 30, 100 \"", rear = "\" ' newsImages/newspaper.jpg ", newImage = "newsImages/", command;
+                  newImage += type;
+                  newImage += "/";
+                  newImage += type;
                   if(number == 4)
                   	newImage = newImage + patch::to_string(200) + ".jpg";
               	  else
               	  	newImage = newImage + patch::to_string(number*20) + ".jpg";
-                  cout<<"front = "<<front<<endl;
+                  /*cout<<"front = "<<front<<endl;
                   cout<<"toput[1] = "<<toput[1]<<endl;
                   cout<<"rear = "<<rear;
-                  cout<<"newImage = "<<newImage<<endl;
+                  cout<<"newImage = "<<newImage<<endl;*/
                   command = front;
                   command += toput[1];
                   command += rear;
                   command += newImage;
-                  //char *toBePassed = new char[command.size()];
-                  std::cout<<"command = "<<command<<endl;/*
-                  for(int i = 0; i < command.size(); ++i)
-                  {
-                    toBePassed[i] = command[i];
-                    //cout<<"toBePassed["<<i<<"] = "<<toBePassed[i]<<" and command["<<i<<"] = "<<command[i]<<endl;
-                  }
-                  std::cout<<"command = "<<toBePassed;*/
+                  //std::cout<<"command = "<<command<<endl;
                   system(command.c_str());
-
-                  cout<<endl;
+                  //cout<<endl;
                   count = 0;
                   test = imread(newImage, 1);
-                  newsImages.push_back(test.clone());
-                  //imshow(newImage, test);
-                  //waitKey(0);
-
+                  newsImages.push_back(test);
                   number++;
-                  //delete toBePassed;
                 }
               }
             }
@@ -430,33 +488,35 @@ bool createNewsImages()
 
 bool getWeather()
 {
-	  CURL *curl;
-    CURLcode res;
-    std::string readBuffer;
+	CURL *curl;
+  CURLcode res;
+  std::string readBuffer;
 
     
-    curl = curl_easy_init();
-    if(curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, "http://api.openweathermap.org/data/2.5/weather?q=Mumbai%2CIndia&mode=xml&appid=4208d08d55c67489ec3914dac5d811b2");
+  curl = curl_easy_init();
+  if(curl) 
+  {
+    curl_easy_setopt(curl, CURLOPT_URL, "http://api.openweathermap.org/data/2.5/weather?q=Mumbai%2CIndia&mode=xml&appid=4208d08d55c67489ec3914dac5d811b2");
         // example.com is redirected, so we tell libcurl to follow redirection
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
         
         // Perform the request, res will get the return code
-        res = curl_easy_perform(curl);
+    res = curl_easy_perform(curl);
         //Check for errors
-        if(res != CURLE_OK)
-            fprintf(stderr, "curl_easy_perform() failed: %s\n",
-                    curl_easy_strerror(res));
-        
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+        curl_easy_strerror(res));
         // always cleanup
-        curl_easy_cleanup(curl);
-         //std::cout << readBuffer << std::endl;
-        ofstream myfile ("weather.xml");
-        myfile<<readBuffer;
-
+    else
+    {
+           //std::cout << readBuffer << std::endl;
+      ofstream myfile ("xmls/weather.xml");
+      myfile<<readBuffer;
     }
+    curl_easy_cleanup(curl);
+  }
 
   std::locale::global(std::locale(""));
   string temp, weather, icon;
@@ -464,7 +524,7 @@ bool getWeather()
 
   try
   {
-    xmlpp::TextReader reader("weather.xml");
+    xmlpp::TextReader reader("xmls/weather.xml");
 
     while(reader.read())
     {
@@ -494,7 +554,6 @@ bool getWeather()
   catch(const std::exception& e)
   {
     std::cerr << "Exception caught: " << e.what() << std::endl;
-    return EXIT_FAILURE;
   }
   tempInt = 0;
   int i = 0;
@@ -506,25 +565,25 @@ bool getWeather()
   }
   tempInt -= 273;
   cout<<"temperature = "<<tempInt<<" weather = "<<weather<<" icon = "<<icon<<endl;
-  string weatherIconPath = "/home/nilesh/ITSP/weather_icons/";
+  string weatherIconPath = "weather_icons/";
   weatherIconPath += (icon+".png");
   cout<<weatherIconPath<<endl;
   weatherIcon = imread(weatherIconPath, 1);
   string temper = patch::to_string(tempInt);
-  string front = "convert -pointsize 120 -fill black -draw 'text 65, 245 ", rear = " ' temp_background.jpg temp_backgroundi.jpg", command;
+  string front = "convert -pointsize 120 -fill black -draw 'text 65, 245 ", rear = " ' weatherImages/temp_background.jpg weatherImages/temp_backgroundi.jpg", command;
 
     command = front+"\""+temper+"\""+rear;
     std::cout<<"command = "<<command;
 
     system(command.c_str());
-    front = "convert -pointsize 40 -fill black -draw 'text 80, 95 ", rear = " ' temp_backgroundi.jpg temperature.jpg", command;
+    front = "convert -pointsize 40 -fill black -draw 'text 80, 95 ", rear = " ' weatherImages/temp_backgroundi.jpg weatherImages/temperature.jpg", command;
 
     command = front+"\""+"Mumbai"+"\""+rear;
     std::cout<<"command = "<<command;
 
     system(command.c_str());
 
-    tempImage = imread("temperature.jpg", 1);
+    tempImage = imread("weatherImages/temperature.jpg", 1);
 
   return EXIT_SUCCESS;
 }
@@ -562,32 +621,137 @@ void createDateImage()
     if(monint == 11)
     	mon = "DEC";
 
-    string front = "convert -pointsize 250 -fill blue -draw 'text 130, 410 ", rear = " ' calendar.jpg cali.jpg", command;
+    string front = "convert -pointsize 250 -fill blue -draw 'text 130, 410 ", rear = " ' calendarImages/calendar.jpg calendarImages/cali.jpg", command;
 
     command = front+"\""+day+"\""+rear;
     std::cout<<"command = "<<command;
 	system(command.c_str());
-	front = "convert -pointsize 120 -fill black -draw 'text 80, 150 "; rear = " ' cali.jpg cal.jpg"; command = "";
+	front = "convert -pointsize 120 -fill black -draw 'text 80, 150 "; rear = " ' calendarImages/cali.jpg calendarImages/cal.jpg"; command = "";
 
     command = front+"\""+mon+"\""+rear;
     std::cout<<"command = "<<command;
 	system(command.c_str());
 
-	finalCal = imread("cal.jpg", 1);
+	finalCal = imread("calendarImages/cal.jpg", 1);
+}
+
+void paste(Mat &finalImage, Mat &imageLogo, box &tileCorner)
+{
+  if(imageLogo.rows > 0 and imageLogo.cols > 0 and tileCorner.valid())
+  {
+    vector<Point2f> left_image;      
+    vector<Point2f> right_image;
+
+    left_image.push_back(Point2f(float(0),float(0)));
+    left_image.push_back(Point2f(float(imageLogo.cols),float(0)));
+    left_image.push_back(Point2f(float(imageLogo.cols),float(imageLogo.rows)));
+    left_image.push_back(Point2f(float(0),float(imageLogo.rows)));        
+
+    for(int j = 0; j < 4; ++j)
+    { 
+      right_image.push_back(tileCorner.pt[j]);
+    }
+    Mat H = findHomography(left_image,right_image,0 );
+    Mat logoWarped;
+    warpPerspective(imageLogo,logoWarped,H,finalImage.size() );
+
+
+    Mat gray,gray_inv,src1final,src2final;
+    Mat src1 = finalImage, src2 = logoWarped.clone();
+    cvtColor(src2,gray,CV_BGR2GRAY);
+    threshold(gray,gray,0,255,CV_THRESH_BINARY);
+    //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
+    bitwise_not ( gray, gray_inv );
+    src1.copyTo(src1final,gray_inv);
+    src2.copyTo(src2final,gray);
+    finalImage = src1final+src2final;
+  }
+}
+
+clock_t begin_time = clock();
+clock_t up_time = begin_time;
+
+void controller()
+{
+  char ch = waitKey(20);
+  if(currentPage.code == MAINPAGE)
+  {
+    if(ch >= '1' and ch <= '8')
+    {
+      if(ch == '1')
+        currentPage = topNewsPage;
+      if(ch == '2')
+        currentPage = moneyNewsPage;
+      if(ch == '3')
+        currentPage = sportsNewsPage;
+      if(ch == '4')
+        currentPage = lifestylePage;
+      if(ch == '5')
+        currentPage = worldNewsPage;
+      if(ch == '6')
+        currentPage = healthPage;
+      if(ch == '7')
+        currentPage = techNewsPage;
+      if(ch == '8')
+        currentPage = mediaNewsPage;
+    }
+  }
+  if(currentPage.code == NEWSPAGE)
+  {
+    if(ch == '1')
+      currentPage = mainPage;
+    if(ch == '4')
+    {
+      begin_time = clock();
+      idx = (idx + 1) % currentPage.images.size();
+    }
+    if(ch == '8')
+    {
+      begin_time = clock();
+      idx = (idx - 1 + currentPage.images.size()) % currentPage.images.size();
+    }
+  }
 }
 
 int main(int argc, char const *argv[])
 {
-	Stream wri(7777);
-	Mat markerImage, inputImage, imageLogo, finalImage;
+  map<int, box> tiles;
+  Stream wri(7777);
+  Mat markerImage, inputImage, imageLogo, finalImage;
+  vector< int > markerIds;
+  vector< vector<Point2f> > markerCorners, rejectedCandidates;
+
+  backIcon = imread("otherIcons/backIcon2.jpg");
+  nextIcon = imread("otherIcons/nextIcon2.jpg");
+  prevIcon = imread("otherIcons/prevIcon2.jpg");
+  noImageIcon = imread("otherIcons/noImageIcon.jpg");
+  initializeMainPage();
+
 	Ptr<aruco::Dictionary> dictionary=aruco::getPredefinedDictionary(aruco::DICT_6X6_250);
+
 	VideoCapture capture(1);
-	//VideoCapture capture(0), toBePasted;
-	createNewsImages();
+
+  string type = "topNews";
+	createNewsImages(type, topNewsPage.images);
+  type = "businessNews";
+  createNewsImages(type, moneyNewsPage.images);
+  type = "sportsNews";
+  createNewsImages(type, sportsNewsPage.images);
+  type = "worldNews";
+  createNewsImages(type, worldNewsPage.images);
+  type = "entertainmentNews";
+  createNewsImages(type, mediaNewsPage.images);
+  type = "technologyNews";
+  createNewsImages(type, techNewsPage.images);
+  type = "health";
+  createNewsImages(type, healthPage.images);
+  type = "lifestyle";
+  createNewsImages(type, lifestylePage.images);
 	getWeather();
 	createDateImage();
-	vector< int > markerIds;
-	vector< vector<Point2f> > markerCorners, rejectedCandidates;
+
+  currentPage = mainPage;
+
 	Ptr<aruco::DetectorParameters> parameters = aruco::DetectorParameters::create(); 
 
 	clk = imread("clocks/clock3.png");
@@ -605,207 +769,115 @@ int main(int argc, char const *argv[])
 
 	while(capture.read(inputImage))
 	{
+    box centerTile;
 		//inputImage = imread("full.jpg", 1);
 		//imshow("inputImage", inputImage);
-		ftime(&tmb);
-		rawtime=tmb.time;
-		timeinfo = localtime ( &rawtime );
+    {
+  		ftime(&tmb);
+  		rawtime=tmb.time;
+  		timeinfo = localtime ( &rawtime );
 
-		second     = timeinfo->tm_sec;
-		minute     = timeinfo->tm_min;
-		hour       = timeinfo->tm_hour;
-		millisec   = tmb.millitm;
-
-
-		second=second+millisec/1000;
-		sec_angle=(second*6)+270;
-
-		minute=minute+second/60;
-		min_angle=minute*6+270; 
-
-		if(hour>12)hour = hour-12;
-		   hour_angle=(hour*30)+(minute*.5)+270; 
+  		second     = timeinfo->tm_sec;
+  		minute     = timeinfo->tm_min;
+  		hour       = timeinfo->tm_hour;
+  		millisec   = tmb.millitm;
 
 
-		if(sec_angle>360)sec_angle=sec_angle-360;
-		if(min_angle>360)min_angle=min_angle-360;
-		if(hour_angle>360)hour_angle=hour_angle-360;
+  		second=second+millisec/1000;
+  		sec_angle=(second*6)+270;
 
-		perim.x =  (int)round(cent.x + (rad-25) * cos(sec_angle * CV_PI / 180.0));
-		perim.y =  (int)round(cent.y + (rad-25) * sin(sec_angle * CV_PI / 180.0));
-		line(clk,cent,perim, Scalar(255,0,0,0), 4,CV_AA,0);
+  		minute=minute+second/60;
+  		min_angle=minute*6+270; 
 
-
-		perim.x =  (int)round(cent.x + (rad-50) * cos(min_angle * CV_PI / 180.0));
-		perim.y =  (int)round(cent.y + (rad-50) * sin(min_angle * CV_PI / 180.0));
-		line(clk,cent,perim, Scalar(255,0,0,0), 8,CV_AA,0);
+  		if(hour>12)hour = hour-12;
+  		   hour_angle=(hour*30)+(minute*.5)+270; 
 
 
-		perim.x =  (int)round(cent.x + (rad-75) * cos(hour_angle * CV_PI / 180.0));
-		perim.y =  (int)round(cent.y + (rad-75) * sin(hour_angle * CV_PI / 180.0));
-		line(clk,cent,perim, Scalar(255,0,0,0), 12,CV_AA,0);
+  		if(sec_angle>360)sec_angle=sec_angle-360;
+  		if(min_angle>360)min_angle=min_angle-360;
+  		if(hour_angle>360)hour_angle=hour_angle-360;
 
-		imageLogo = clk.clone();
-		//imshow("Clock",clk); 
-		clk.setTo(0); 
-		clk=back_up.clone();
+  		perim.x =  (int)round(cent.x + (rad-25) * cos(sec_angle * CV_PI / 180.0));
+  		perim.y =  (int)round(cent.y + (rad-25) * sin(sec_angle * CV_PI / 180.0));
+  		line(clk,cent,perim, Scalar(255,0,0,0), 4,CV_AA,0);
 
-		aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
+
+  		perim.x =  (int)round(cent.x + (rad-50) * cos(min_angle * CV_PI / 180.0));
+  		perim.y =  (int)round(cent.y + (rad-50) * sin(min_angle * CV_PI / 180.0));
+  		line(clk,cent,perim, Scalar(255,0,0,0), 8,CV_AA,0);
+
+
+  		perim.x =  (int)round(cent.x + (rad-75) * cos(hour_angle * CV_PI / 180.0));
+  		perim.y =  (int)round(cent.y + (rad-75) * sin(hour_angle * CV_PI / 180.0));
+  		line(clk,cent,perim, Scalar(255,0,0,0), 12,CV_AA,0);
+
+  		imageLogo = clk.clone();
+  		//imshow("Clock",clk); 
+  		clk.setTo(0); 
+  		clk=back_up.clone();
+
+  		aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
+    }
+
+    tiles.clear();
+
+    for(int i = 0; i < markerCorners.size(); ++i)
+    {
+      for(int j = 0; j < 4; ++j)
+      {
+        tiles[markerIds[i]].pt[j] = markerCorners[i][j];
+      }
+    }
+    centerTile.pt[0] = tiles[60].pt[0];
+    centerTile.pt[1] = tiles[40].pt[1];
+    centerTile.pt[2] = tiles[120].pt[2];
+    centerTile.pt[3] = tiles[100].pt[3];
+
 		finalImage = inputImage.clone();
-			for(int i = 0; i < markerCorners.size(); ++i)
-			{
-				if(markerIds[i] == 1)
-				{
-				vector<Point2f> left_image;      
-				vector<Point2f> right_image;
-
-				left_image.push_back(Point2f(float(0),float(0)));
-				left_image.push_back(Point2f(float(imageLogo.cols),float(0)));
-				left_image.push_back(Point2f(float(imageLogo.cols),float(imageLogo.rows)));
-			    left_image.push_back(Point2f(float(0),float(imageLogo.rows)));		    
-
-			    for(int j = 0; j < markerCorners[i].size(); ++j)
-			    {	
-			    	right_image.push_back(markerCorners[i][j]);
-			    }
-				Mat H = findHomography(  left_image,right_image,0 );
-		        Mat logoWarped;
-		        warpPerspective(imageLogo,logoWarped,H,finalImage.size() );
-
-
-		        Mat gray,gray_inv,src1final,src2final;
-		        Mat src1 = finalImage, src2 = logoWarped.clone();
-			    cvtColor(src2,gray,CV_BGR2GRAY);
-			    threshold(gray,gray,0,255,CV_THRESH_BINARY);
-			    //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
-			    bitwise_not ( gray, gray_inv );
-			    src1.copyTo(src1final,gray_inv);
-			    src2.copyTo(src2final,gray);
-			    finalImage = src1final+src2final;
-				}
-				if(markerIds[i] == 80)
-				{
-					vector<Point2f> left_image;      
-					vector<Point2f> right_image;
-
-					left_image.push_back(Point2f(float(0),float(0)));
-					left_image.push_back(Point2f(float(weatherIcon.cols),float(0)));
-					left_image.push_back(Point2f(float(weatherIcon.cols),float(weatherIcon.rows)));
-				    left_image.push_back(Point2f(float(0),float(weatherIcon.rows)));		    
-
-				    for(int j = 0; j < markerCorners[i].size(); ++j)
-				    {	
-				    	right_image.push_back(markerCorners[i][j]);
-				    }
-					Mat H = findHomography(  left_image,right_image,0 );
-			        Mat logoWarped;
-			        warpPerspective(weatherIcon,logoWarped,H,finalImage.size() );
-
-
-			        Mat gray,gray_inv,src1final,src2final;
-			        Mat src1 = finalImage, src2 = logoWarped.clone();
-				    cvtColor(src2,gray,CV_BGR2GRAY);
-				    threshold(gray,gray,0,255,CV_THRESH_BINARY);
-				    //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
-				    bitwise_not ( gray, gray_inv );
-				    src1.copyTo(src1final,gray_inv);
-				    src2.copyTo(src2final,gray);
-				    finalImage = src1final+src2final;
-				}
-        if(markerIds[i] == 20)
+    paste(finalImage, imageLogo, tiles[1]);
+		paste(finalImage, weatherIcon, tiles[80]);
+		paste(finalImage, tempImage, tiles[20]);
+    paste(finalImage, finalCal, tiles[220]);
+		
+    if(currentPage.type == FULL)
+    {
+      if(currentPage.code == MAINPAGE)
+      {
+        paste(finalImage, currentPage.images[0], tiles[200]);
+        paste(finalImage, currentPage.images[1], tiles[60]);
+        paste(finalImage, currentPage.images[2], tiles[40]);
+        paste(finalImage, currentPage.images[3], tiles[140]);
+        paste(finalImage, currentPage.images[4], tiles[180]);
+        paste(finalImage, currentPage.images[5], tiles[100]);
+        paste(finalImage, currentPage.images[6], tiles[120]);
+        paste(finalImage, currentPage.images[7], tiles[160]);
+      }
+    }
+    if(currentPage.type == CENTERED)
+    {
+      if(currentPage.code == NEWSPAGE)
+      {
+        if(begin_time == up_time)
         {
-          vector<Point2f> left_image;      
-          vector<Point2f> right_image;
-
-          left_image.push_back(Point2f(float(0),float(0)));
-          left_image.push_back(Point2f(float(tempImage.cols),float(0)));
-          left_image.push_back(Point2f(float(tempImage.cols),float(tempImage.rows)));
-            left_image.push_back(Point2f(float(0),float(tempImage.rows)));        
-
-            for(int j = 0; j < markerCorners[i].size(); ++j)
-            { 
-              right_image.push_back(markerCorners[i][j]);
-            }
-          Mat H = findHomography(  left_image,right_image,0 );
-              Mat logoWarped;
-              warpPerspective(tempImage,logoWarped,H,finalImage.size() );
-
-
-              Mat gray,gray_inv,src1final,src2final;
-              Mat src1 = finalImage, src2 = logoWarped.clone();
-            cvtColor(src2,gray,CV_BGR2GRAY);
-            threshold(gray,gray,0,255,CV_THRESH_BINARY);
-            //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
-            bitwise_not ( gray, gray_inv );
-            src1.copyTo(src1final,gray_inv);
-            src2.copyTo(src2final,gray);
-            finalImage = src1final+src2final;
+          begin_time = clock();
         }
-				if(markerIds[i] == 220)
-				{
-					vector<Point2f> left_image;      
-					vector<Point2f> right_image;
-
-					left_image.push_back(Point2f(float(0),float(0)));
-					left_image.push_back(Point2f(float(finalCal.cols),float(0)));
-					left_image.push_back(Point2f(float(finalCal.cols),float(finalCal.rows)));
-				    left_image.push_back(Point2f(float(0),float(finalCal.rows)));		    
-
-				    for(int j = 0; j < markerCorners[i].size(); ++j)
-				    {	
-				    	right_image.push_back(markerCorners[i][j]);
-				    }
-					Mat H = findHomography(  left_image,right_image,0 );
-			        Mat logoWarped;
-			        warpPerspective(finalCal,logoWarped,H,finalImage.size() );
-
-
-			        Mat gray,gray_inv,src1final,src2final;
-			        Mat src1 = finalImage, src2 = logoWarped.clone();
-				    cvtColor(src2,gray,CV_BGR2GRAY);
-				    threshold(gray,gray,0,255,CV_THRESH_BINARY);
-				    //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
-				    bitwise_not ( gray, gray_inv );
-				    src1.copyTo(src1final,gray_inv);
-				    src2.copyTo(src2final,gray);
-				    finalImage = src1final+src2final;
-				}
-				if(markerIds[i] % 20 == 0 and (markerIds[i]/20) <= newsImages.size() and (markerIds[i]/20) <= 10 and (markerIds[i]/20) >= 2 and (markerIds[i]/20) != 4)
-				{
-					vector<Point2f> left_image;      
-					vector<Point2f> right_image;
-
-					left_image.push_back(Point2f(float(0),float(0)));
-					left_image.push_back(Point2f(float(newsImages[(markerIds[i]/20)-1].cols),float(0)));
-					left_image.push_back(Point2f(float(newsImages[(markerIds[i]/20)-1].cols),float(newsImages[(markerIds[i]/20)-1].rows)));
-				    left_image.push_back(Point2f(float(0),float(newsImages[(markerIds[i]/20)-1].rows)));		    
-
-				    for(int j = 0; j < markerCorners[i].size(); ++j)
-				    {	
-				    	right_image.push_back(markerCorners[i][j]);
-				    }
-					Mat H = findHomography(  left_image,right_image,0 );
-			        Mat logoWarped;
-			        warpPerspective(newsImages[(markerIds[i]/20)-1],logoWarped,H,finalImage.size() );
-
-
-			        Mat gray,gray_inv,src1final,src2final;
-			        Mat src1 = finalImage, src2 = logoWarped.clone();
-				    cvtColor(src2,gray,CV_BGR2GRAY);
-				    threshold(gray,gray,0,255,CV_THRESH_BINARY);
-				    //adaptiveThreshold(gray,gray,255,ADAPTIVE_THRESH_MEAN_C,THRESH_BINARY,5,4);
-				    bitwise_not ( gray, gray_inv );
-				    src1.copyTo(src1final,gray_inv);
-				    src2.copyTo(src2final,gray);
-				    finalImage = src1final+src2final;
-				}
-		    }
-		    
+        if((clock() - begin_time)/CLOCKS_PER_SEC > 10.0)
+        {
+          begin_time = clock();
+          idx = (idx + 1) % currentPage.images.size();
+        }
+        paste(finalImage, backIcon, tiles[200]);
+        paste(finalImage, nextIcon, tiles[140]);
+        paste(finalImage, noImageIcon, tiles[180]);
+        paste(finalImage, prevIcon, tiles[160]);
+        paste(finalImage, currentPage.images[idx], centerTile);
+      }
+    }		    
 		//aruco::drawDetectedMarkers(finalImage, markerCorners, markerIds);
 		imshow("outputImage", finalImage);
 		wri.connect();
         wri.write(finalImage);
-		waitKey(10);
+		controller();
 	}
 	waitKey(0);
 }
